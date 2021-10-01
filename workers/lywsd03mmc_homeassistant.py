@@ -25,6 +25,7 @@ class Lywsd03Mmc_HomeassistantWorker(BaseWorker):
     """
     def _setup(self):
         _LOGGER.info("Adding %d %s devices", len(self.devices), repr(self))
+        _LOGGER.debug("Lywsd03Mmc_HomeassistantWorker [passive:%s scan_timeout:%d]", self.passive, self.scan_timeout)
         for name, mac in self.devices.items():
             _LOGGER.debug("Adding %s device '%s' (%s)", repr(self), name, mac)
             self.devices[name] = lywsd03mmc(mac, command_timeout=self.command_timeout, passive=self.passive)
@@ -93,22 +94,29 @@ class Lywsd03Mmc_HomeassistantWorker(BaseWorker):
 
     def status_update(self):
         from bluepy import btle
-        _LOGGER.info("Updating %d %s devices", len(self.devices), repr(self))
+        # _LOGGER.info("Updating %d %s devices", len(self.devices), repr(self))
 
         if self.passive:
+            scan_timeout = self.scan_timeout if hasattr(self, 'scan_timeout') else 20.0
+            _LOGGER.debug("scanning... (timeout: %d)", scan_timeout)
             scanner = btle.Scanner()
-            results = scanner.scan(self.scan_timeout if hasattr(self, 'scan_timeout') else 20.0, passive=True)
+            results = scanner.scan(scan_timeout, passive=True)
 
             for res in results:
                 device = self.find_device(res.addr)
                 if device:
+                    _LOGGER.debug("%s -parsing scan data", res.addr)
                     for (adtype, desc, value) in res.getScanData():
                         if ("1a18" in value):
                             _LOGGER.debug("%s - received scan data %s", res.addr, value)
                             device.processScanValue(value)
+                        else:
+                            _LOGGER.debug("%s - unknown scan data %s", res.addr, value)      
+                else:
+                    _LOGGER.debug("device %s not found", res.addr)
 
         for name, device in self.devices.items():
-            _LOGGER.debug("Updating %s device '%s' (%s)", repr(self), name, device.mac)
+            # _LOGGER.debug("Updating %s device '%s' (%s)", repr(self), name, device.mac)
             # from btlewrap import BluetoothBackendException
 
             try:
@@ -155,11 +163,12 @@ class Lywsd03Mmc_HomeassistantWorker(BaseWorker):
                 )
             )
 
+        battery = device.getBattery()
         # Low battery binary sensor
         ret.append(
             MqttMessage(
                 topic=self.format_topic(name, ATTR_LOW_BATTERY),
-                payload=self.true_false_to_ha_on_off(device.getBattery() < 3),
+                payload= self.true_false_to_ha_on_off(battery < 3 if battery != None else False),
             )
         )
 
