@@ -25,7 +25,7 @@ class Lywsd03Mmc_HomeassistantWorker(BaseWorker):
     """
     def _setup(self):
         _LOGGER.info("Adding %d %s devices", len(self.devices), repr(self))
-        _LOGGER.debug("Lywsd03Mmc_HomeassistantWorker [passive:%s scan_timeout:%d]", self.passive, self.scan_timeout)
+        _LOGGER.debug("Lywsd03Mmc_HomeassistantWorker [passive:%s scan_timeout:%d prefix: %s]", self.passive, self.scan_timeout, self.name_prefix)
         for name, mac in self.devices.items():
             _LOGGER.debug("Adding %s device '%s' (%s)", repr(self), name, mac)
             self.devices[name] = lywsd03mmc(mac, command_timeout=self.command_timeout, passive=self.passive)
@@ -39,8 +39,16 @@ class Lywsd03Mmc_HomeassistantWorker(BaseWorker):
     def find_device(self, mac):
         for name, device in self.devices.items():
             if device.mac == mac:
-                return device
-        return
+                return name, device
+        return None, None
+
+    def format_discovery_topic(self, mac, *sensor_args):
+        node_id = mac.replace(":", "-")
+        object_id = "_".join([self.name_prefix if hasattr(self, 'name_prefix') else repr(self), *sensor_args])
+        return "{}/{}".format(node_id, object_id)
+
+    def format_discovery_name(self, *sensor_args):
+        return "_".join([self.name_prefix if hasattr(self, 'name_prefix') else repr(self), *sensor_args])
 
     def config_device(self, name, mac):
         ret = []
@@ -56,6 +64,7 @@ class Lywsd03Mmc_HomeassistantWorker(BaseWorker):
                 "unique_id": self.format_discovery_id(mac, name, attr),
                 "state_topic": self.format_prefixed_topic(name, attr),
                 "name": self.format_discovery_name(name, attr),
+                "force_update": "true",
                 "device": device,
             }
 
@@ -103,48 +112,71 @@ class Lywsd03Mmc_HomeassistantWorker(BaseWorker):
             results = scanner.scan(scan_timeout, passive=True)
 
             for res in results:
-                device = self.find_device(res.addr)
+                name, device = self.find_device(res.addr)
                 if device:
                     _LOGGER.debug("%s -parsing scan data", res.addr)
                     for (adtype, desc, value) in res.getScanData():
                         if ("1a18" in value):
                             _LOGGER.debug("%s - received scan data %s", res.addr, value)
                             device.processScanValue(value)
+                            try:
+                                # only send state update if the state was actually read - prevent sending stale values to MQTT
+                                with timeout(self.command_timeout, exception=DeviceTimeoutError):
+                                    yield self.update_device_state(name, device)
+                            except btle.BTLEException as e:
+                                logger.log_exception(
+                                    _LOGGER,
+                                    "Error during update of %s device '%s' (%s): %s",
+                                    repr(self),
+                                    name,
+                                    device.mac,
+                                    type(e).__name__,
+                                    suppress=True,
+                                )
+                            except DeviceTimeoutError:
+                                logger.log_exception(
+                                    _LOGGER,
+                                    "Time out during update of %s device '%s' (%s)",
+                                    repr(self),
+                                    name,
+                                    device.mac,
+                                    suppress=True,
+                                )
                         else:
                             _LOGGER.debug("%s - unknown scan data %s", res.addr, value)      
                 else:
                     _LOGGER.debug("device %s not found", res.addr)
+        else:
+            for name, device in self.devices.items():
+                # _LOGGER.debug("Updating %s device '%s' (%s)", repr(self), name, device.mac)
+                # from btlewrap import BluetoothBackendException
 
-        for name, device in self.devices.items():
-            # _LOGGER.debug("Updating %s device '%s' (%s)", repr(self), name, device.mac)
-            # from btlewrap import BluetoothBackendException
-
-            try:
-                with timeout(self.command_timeout, exception=DeviceTimeoutError):
-                    yield self.update_device_state(name, device)
-            except btle.BTLEException as e:
-                logger.log_exception(
-                    _LOGGER,
-                    "Error during update of %s device '%s' (%s): %s",
-                    repr(self),
-                    name,
-                    device.mac,
-                    type(e).__name__,
-                    suppress=True,
-                )
-            except DeviceTimeoutError:
-                logger.log_exception(
-                    _LOGGER,
-                    "Time out during update of %s device '%s' (%s)",
-                    repr(self),
-                    name,
-                    device.mac,
-                    suppress=True,
-                )
+                try:
+                    with timeout(self.command_timeout, exception=DeviceTimeoutError):
+                        yield self.update_device_state(name, device)
+                except btle.BTLEException as e:
+                    logger.log_exception(
+                        _LOGGER,
+                        "Error during update of %s device '%s' (%s): %s",
+                        repr(self),
+                        name,
+                        device.mac,
+                        type(e).__name__,
+                        suppress=True,
+                    )
+                except DeviceTimeoutError:
+                    logger.log_exception(
+                        _LOGGER,
+                        "Time out during update of %s device '%s' (%s)",
+                        repr(self),
+                        name,
+                        device.mac,
+                        suppress=True,
+                    )
 
     def update_device_state(self, name, device):
         ret = []
-        if device.readAll() is None :
+        if device.readAll() is None:
             return ret
         for attr in monitoredAttrs:
 

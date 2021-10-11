@@ -37,16 +37,12 @@ class Lywsd03MmcWorker(BaseWorker):
             for res in results:
                 device = self.find_device(res.addr)
                 if device:
-                    _LOGGER.debug("%s -parsing scan data", res.addr)
                     for (adtype, desc, value) in res.getScanData():
                         if ("1a18" in value):
-                            _LOGGER.debug("%s - received scan data %s", res.addr, value)
                             device.processScanValue(value)
                         else:
+                            # seems like original Mi format is totally different (or encrypted)
                             _LOGGER.debug("%s - unknown scan data %s", res.addr, value)                            
-                            # device.processATCScanValue(value)
-                else:
-                    _LOGGER.debug("device %s not found", res.addr)
 
         for name, lywsd03mmc in self.devices.items():
             #try:
@@ -124,44 +120,57 @@ class lywsd03mmc:
 
     def processScanValue(self, data):
         # mac: a4:c1:38:d6:1e:75
-        # mac is reversed - legacy format?
+        # mac is reversed - custom format
         # 1a18 751ed638c1a4 1c09e111da0a40eb04
         # 1a18751ed638c1a41a09ae11da0a404604
         # int.from_bytes(bindata[8:10], byteorder='little', signed=True) / 100
-        # mac is not reversed - ATC format?
+        # mac is not reversed - ATC format
         # 1a18a4c138d61e7500e92d400adc44
         # int.from_bytes(bindata[8:10], byteorder='big', signed=True) / 10
-        
-        isATCFormat = data[4:6] == self.mac[0:2]
-        if isATCFormat:
-            self.handleNotification(data)
+        packetMac = data[4:16]
+        isMacReversed = packetMac[-2:] == self.mac[0:2]
+
+        _LOGGER.debug('packet length: %d isMacReversed: %s packetMac: %s data: %s', len(data), isMacReversed, packetMac, data)
+
+        if isMacReversed:
+            return self.processCustomScanValue(data)
         else:
-            _LOGGER.debug("handle legacy format %s", data)
-            bindata = bytearray.fromhex(data)
-            temperature = int.from_bytes(bindata[8:10], byteorder='little', signed=True) / 100
-            humidity = int.from_bytes(bindata[10:12], byteorder='little') / 100
-            battery = int.from_bytes(bindata[11:13], byteorder='little') / 1000
-            # temperature = int(data[16:20], 16) / 10
-            # humidity = int(data[20:22], 16)
-            # battery = int(data[22:24], 16)
+            return self.processATCScanValue(data)
 
-            self._temperature = round(temperature, 1)
-            self._humidity = round(humidity)
-            self._battery = round(battery, 4)
+        _LOGGER.warn('unrecognized scan value format. length: %d', len(data))
+    
+    def processLegacyScanValue(self, data):
+        _LOGGER.debug("handle legacy format %s", data)
+        
+        temperature = int(data[16:20], 16) / 10
+        humidity = int(data[20:22], 16)
+        battery = int(data[22:24], 16)
+        battery_v = 0
 
-    # def processATCScanValue(self, data):
-    #     temperature = struct.unpack("<H", bytearray.fromhex(data[16:20]))[0] / 100
-    #     humidity = struct.unpack("<H", b'\x00' + bytearray.fromhex(data[20:22]))
-    #     battery = struct.unpack("<H", b'\x00' + bytearray.fromhex(data[22:24]))
+        self._temperature = round(temperature, 1)
+        self._humidity = round(humidity)
+        self._battery = round(battery, 4)
 
-    #     self._temperature = round(temperature, 1)
-    #     self._humidity = round(humidity)
-    #     self._battery = round(battery, 4)
+        _LOGGER.debug("[%s temp: %f, hum: %d, bat: %d bat_v: %d]", self.mac, temperature, humidity, battery, battery_v)
 
-    def handleNotification(self, data):
-        # https://github.com/pvvx/ATC_MiThermometer#custom-format-all-data-little-endian
-        # it says little-endian in docs, but looks more like big-endian in real live...
+    def processCustomScanValue(self, data):
+        _LOGGER.debug("handle custom format %s", data)
+        
+        bindata = bytearray.fromhex(data)
+        temperature = int.from_bytes(bindata[8:10], byteorder='little', signed=True) / 100
+        humidity = int.from_bytes(bindata[10:12], byteorder='little', signed=False) / 100
+        battery_v = int.from_bytes(bindata[12:14], byteorder='little', signed=False)
+        battery = int.from_bytes(bindata[14:15], byteorder='little', signed=False)
+
+        self._temperature = round(temperature, 1)
+        self._humidity = round(humidity)
+        self._battery = round(battery, 4)
+
+        _LOGGER.debug("[%s temp: %f, hum: %d, bat: %d bat_v: %d]", self.mac, temperature, humidity, battery, battery_v)
+    
+    def processATCScanValue(self, data):
         _LOGGER.debug("handle ATC format %s", data)
+        
         bindata = bytearray.fromhex(data)
         temperature = int.from_bytes(bindata[8:10], byteorder='big', signed=True) / 10
         humidity = int.from_bytes(bindata[10:11], byteorder='big')
@@ -171,6 +180,5 @@ class lywsd03mmc:
         self._temperature = round(temperature, 1)
         self._humidity = round(humidity)
         self._battery = round(battery, 4)
-        
-        _LOGGER.debug("%s - parsed temp: %f, hum: %d, bat: %d bat_v: %d", self.mac, temperature, humidity, battery, battery_v)
 
+        _LOGGER.debug("[%s temp: %f, hum: %d, bat: %d bat_v: %d]", self.mac, temperature, humidity, battery, battery_v)
