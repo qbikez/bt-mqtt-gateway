@@ -33,11 +33,13 @@ class Lywsd03MmcWorker(BaseWorker):
             scanner = btle.Scanner()
             results = scanner.scan(self.scan_timeout if hasattr(self, 'scan_timeout') else 20.0, passive=True)
 
-            _LOGGER.debug("scan results: %s", results)
+            _LOGGER.debug("scan results for device %s", results)
             for res in results:
                 device = self.find_device(res.addr)
+                scanData = res.getScanData()
+                _LOGGER.debug("device with addr %s (%s). data: %s", res.addr, device, scanData)
                 if device:
-                    for (adtype, desc, value) in res.getScanData():
+                    for (adtype, desc, value) in scanData:
                         if ("1a18" in value):
                             device.processScanValue(value)
                         else:
@@ -88,10 +90,10 @@ class lywsd03mmc:
                 humidity = self.getHumidity()
                 battery = self.getBattery()
 
-        # if temperature and humidity and battery:
-        #     _LOGGER.debug("%s - found values %f, %d, %d", self.mac, temperature, humidity, battery)
-        # else:
-        #     _LOGGER.debug("%s - no data received", self.mac)
+        if temperature and humidity and battery:
+            _LOGGER.debug("%s - found values %f, %d, %d", self.mac, temperature, humidity, battery)
+        else:
+            _LOGGER.debug("%s - no data received", self.mac)
 
         return {
             "temperature": temperature,

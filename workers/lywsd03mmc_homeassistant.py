@@ -25,7 +25,7 @@ class Lywsd03Mmc_HomeassistantWorker(BaseWorker):
     """
     def _setup(self):
         _LOGGER.info("Adding %d %s devices", len(self.devices), repr(self))
-        _LOGGER.debug("Lywsd03Mmc_HomeassistantWorker [passive:%s scan_timeout:%d prefix: %s]", self.passive, self.scan_timeout, self.name_prefix)
+        _LOGGER.debug("Lywsd03Mmc_HomeassistantWorker [passive:%s scan_timeout:%d prefix: %s]", self.passive, self.scan_timeout, self.name_prefix if hasattr(self, 'name_prefix') else repr(self))
         for name, mac in self.devices.items():
             _LOGGER.debug("Adding %s device '%s' (%s)", repr(self), name, mac)
             self.devices[name] = lywsd03mmc(mac, command_timeout=self.command_timeout, passive=self.passive)
@@ -109,12 +109,14 @@ class Lywsd03Mmc_HomeassistantWorker(BaseWorker):
             scan_timeout = self.scan_timeout if hasattr(self, 'scan_timeout') else 20.0
             _LOGGER.debug("scanning... (timeout: %d)", scan_timeout)
             scanner = btle.Scanner()
-            results = scanner.scan(scan_timeout, passive=True)
+            results = scanner.scan(self.scan_timeout if hasattr(self, 'scan_timeout') else 20.0, passive=True)
 
             for res in results:
                 name, device = self.find_device(res.addr)
                 if device:
-                    _LOGGER.debug("%s -parsing scan data", res.addr)
+                    scanData = res.getScanData()
+                    _LOGGER.debug("device with addr %s (%s). data: %s", res.addr, device, scanData)
+                    
                     for (adtype, desc, value) in res.getScanData():
                         if ("1a18" in value):
                             _LOGGER.debug("%s - received scan data %s", res.addr, value)
