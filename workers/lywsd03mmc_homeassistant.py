@@ -114,18 +114,20 @@ class Lywsd03Mmc_HomeassistantWorker(BaseWorker):
             for res in results:
                 name, device = self.find_device(res.addr)
                 if device:
-                    scanData = res.getScanData()
-                    _LOGGER.debug("device with addr %s (%s). data: %s", res.addr, device, scanData)
-                    
-                    for (adtype, desc, value) in res.getScanData():
-                        if ("1a18" in value):
-                            _LOGGER.debug("%s - received scan data %s", res.addr, value)
-                            device.processScanValue(value)
-                            try:
+                    try:
+                        scanData = res.getScanData()
+                        _LOGGER.debug("device with addr %s (%s). data: %s", res.addr, device, scanData)
+                        
+                        for (adtype, desc, value) in scanData:
+                            if ("1a18" in value):
+                                _LOGGER.debug("%s - received scan data %s", res.addr, value)
+                                device.processScanValue(value)
                                 # only send state update if the state was actually read - prevent sending stale values to MQTT
                                 with timeout(self.command_timeout, exception=DeviceTimeoutError):
                                     yield self.update_device_state(name, device)
-                            except btle.BTLEException as e:
+                            else:
+                                _LOGGER.debug("%s - unknown scan data %s", res.addr, value) 
+                    except btle.BTLEException as e:
                                 logger.log_exception(
                                     _LOGGER,
                                     "Error during update of %s device '%s' (%s): %s",
@@ -135,17 +137,15 @@ class Lywsd03Mmc_HomeassistantWorker(BaseWorker):
                                     type(e).__name__,
                                     suppress=True,
                                 )
-                            except DeviceTimeoutError:
-                                logger.log_exception(
-                                    _LOGGER,
-                                    "Time out during update of %s device '%s' (%s)",
-                                    repr(self),
-                                    name,
-                                    device.mac,
-                                    suppress=True,
-                                )
-                        else:
-                            _LOGGER.debug("%s - unknown scan data %s", res.addr, value)      
+                    except DeviceTimeoutError:
+                        logger.log_exception(
+                            _LOGGER,
+                            "Time out during update of %s device '%s' (%s)",
+                            repr(self),
+                            name,
+                            device.mac,
+                            suppress=True,
+                        )     
                 else:
                     _LOGGER.debug("device %s not found", res.addr)
         else:
