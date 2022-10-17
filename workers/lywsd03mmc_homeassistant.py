@@ -65,6 +65,7 @@ class Lywsd03Mmc_HomeassistantWorker(BaseWorker):
                 "state_topic": self.format_prefixed_topic(name, attr),
                 "name": self.format_discovery_name(name, attr),
                 "force_update": "true",
+                "expire_after": "300",
                 "device": device,
             }
 
