@@ -1,5 +1,5 @@
 from exceptions import DeviceTimeoutError
-from mqtt import MqttMessage, MqttConfigMessage
+from mqtt import MqttMessage, MqttConfigMessage, MqttClient
 
 from interruptingcow import timeout
 from workers.base import BaseWorker
@@ -67,6 +67,7 @@ class Lywsd03Mmc_HomeassistantWorker(BaseWorker):
                 "force_update": "true",
                 "expire_after": "300",
                 "device": device,
+                "source": self.source
             }
 
             if attr == "humidity":
@@ -181,8 +182,8 @@ class Lywsd03Mmc_HomeassistantWorker(BaseWorker):
         ret = []
         if device.readAll() is None:
             return ret
-        for attr in monitoredAttrs:
 
+        for attr in monitoredAttrs:
             attrValue = None
             if attr == "humidity":
                 attrValue = device.getHumidity()
@@ -207,4 +208,11 @@ class Lywsd03Mmc_HomeassistantWorker(BaseWorker):
             )
         )
 
+        ret.append(
+            MqttMessage(
+                topic=self.format_topic(name, "source"),
+                payload=self.source,
+            )
+        )
+        
         return ret
