@@ -67,7 +67,7 @@ class Lywsd03Mmc_HomeassistantWorker(BaseWorker):
                 "force_update": "true",
                 "expire_after": "300",
                 "device": device,
-                "source": self.source
+                "source": self.source if hasattr(self, 'source') else '?'
             }
 
             if attr == "humidity":
@@ -211,7 +211,7 @@ class Lywsd03Mmc_HomeassistantWorker(BaseWorker):
         ret.append(
             MqttMessage(
                 topic=self.format_topic(name, "source"),
-                payload=self.source,
+                payload=self.source if hasattr(self, 'source') else '?',
             )
         )
         
