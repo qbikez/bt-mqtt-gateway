@@ -196,6 +196,7 @@ class Lywsd03Mmc_HomeassistantWorker(BaseWorker):
                 MqttMessage(
                     topic=self.format_topic(name, attr),
                     payload=attrValue,
+                    retain=True
                 )
             )
 
@@ -205,6 +206,7 @@ class Lywsd03Mmc_HomeassistantWorker(BaseWorker):
             MqttMessage(
                 topic=self.format_topic(name, ATTR_LOW_BATTERY),
                 payload= self.true_false_to_ha_on_off(battery < 3 if battery != None else False),
+                retain=True
             )
         )
 
@@ -212,6 +214,7 @@ class Lywsd03Mmc_HomeassistantWorker(BaseWorker):
             MqttMessage(
                 topic=self.format_topic(name, "source"),
                 payload=self.source if hasattr(self, 'source') else '?',
+                retain=True
             )
         )
         

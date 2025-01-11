@@ -102,7 +102,7 @@ class MqttClient:
             self.publish(
                 [
                     MqttMessage(
-                        topic=self.availability_topic, payload=LWT_ONLINE, retain=True
+                        topic=self._format_topic(self.availability_topic), payload=LWT_ONLINE, retain=True
                     )
                 ]
             )
@@ -189,5 +189,5 @@ class MqttConfigMessage(MqttMessage):
 
     use_global_prefix = False
 
-    def __init__(self, component, name, payload=None, retain=False):
+    def __init__(self, component, name, payload=None, retain=True):
         super().__init__("{}/{}/config".format(component, name), payload, retain)
